@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  braindeadbot-service:
+    image: braindeadbot-service:latest
+    container_name: braindeadbot-service
+    restart: unless-stopped
+    ports:
+      - "5175:5175"
+    environment:
+      - PORT=5175
+      - NODE_ENV=production
