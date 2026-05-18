@@ -32,6 +32,17 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_raccoon_scores_score
       ON raccoon_scores(score DESC);
+
+    CREATE TABLE IF NOT EXISTS game_scores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '???',
+      score INTEGER NOT NULL DEFAULT 0,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_game_scores_game_id_score
+      ON game_scores(game_id, score DESC);
   `);
 
   return _db;

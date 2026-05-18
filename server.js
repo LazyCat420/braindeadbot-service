@@ -1,10 +1,18 @@
 import express from 'express';
 import cors from 'cors';
 import { getDb } from './src/lib/db.js';
+import rateLimit from 'express-rate-limit';
+import { XMLParser } from 'fast-xml-parser';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const scoreLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: { error: "Too many requests from this IP, please try again later." }
+});
 
 // Scores API
 app.get('/api/scores', (req, res) => {
@@ -24,7 +32,7 @@ app.get('/api/scores', (req, res) => {
   }
 });
 
-app.post('/api/scores', (req, res) => {
+app.post('/api/scores', scoreLimiter, (req, res) => {
   try {
     const { name = "???", score = 0, altitude = 0, meters = 0, tunnelDepth = 0 } = req.body;
     if (typeof name !== "string" || name.length === 0 || name.length > 12) {
@@ -55,18 +63,27 @@ app.post('/api/scores', (req, res) => {
 const RSS_BASE = "https://www.youtube.com/feeds/videos.xml?channel_id=";
 
 function parseAtomFeed(xml, maxResults = 5) {
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_"
+  });
   const entries = [];
-  const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
-  let match;
-  while ((match = entryRegex.exec(xml)) !== null && entries.length < maxResults) {
-    const block = match[1];
-    const videoIdMatch = block.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
-    if (!videoIdMatch) continue;
-    const titleMatch = block.match(/<title>([^<]+)<\/title>/);
-    entries.push({
-      videoId: videoIdMatch[1].trim(),
-      title: titleMatch ? titleMatch[1].trim() : "Untitled",
-    });
+  try {
+    const jsonObj = parser.parse(xml);
+    let feedEntries = jsonObj?.feed?.entry;
+    if (!feedEntries) return [];
+    if (!Array.isArray(feedEntries)) feedEntries = [feedEntries];
+    
+    for (const entry of feedEntries) {
+      if (entries.length >= maxResults) break;
+      const videoId = entry["yt:videoId"];
+      const title = entry.title;
+      if (videoId) {
+        entries.push({ videoId, title: title || "Untitled" });
+      }
+    }
+  } catch (err) {
+    console.error("XML Parsing Error:", err);
   }
   return entries;
 }
@@ -94,27 +111,28 @@ app.post('/api/youtube-sync', async (req, res) => {
     }
     const allRecords = [];
     const errors = [];
-    for (const channel of channels) {
+    
+    await Promise.all(channels.map(async (channel) => {
       let { channelId, artist, maxResults = 5 } = channel;
       maxResults = Math.min(Math.max(1, maxResults), 15);
       if (channelId && channelId.startsWith("@")) {
         const resolved = await resolveHandleToChannelId(channelId);
         if (!resolved) {
           errors.push(`Could not resolve handle ${channelId} to a channel ID.`);
-          continue;
+          return;
         }
         channelId = resolved;
       }
       if (!channelId || !channelId.startsWith("UC")) {
         errors.push(`Invalid channel ID: ${channelId}`);
-        continue;
+        return;
       }
       try {
         const feedUrl = `${RSS_BASE}${channelId}`;
         const fetchRes = await fetch(feedUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
         if (!fetchRes.ok) {
           errors.push(`RSS fetch failed for ${artist || channelId}: HTTP ${fetchRes.status}`);
-          continue;
+          return;
         }
         const xml = await fetchRes.text();
         const entries = parseAtomFeed(xml, maxResults);
@@ -129,7 +147,8 @@ app.post('/api/youtube-sync', async (req, res) => {
       } catch (err) {
         errors.push(`Error fetching RSS for ${artist || channelId}: ${err.message}`);
       }
-    }
+    }));
+    
     const resultObj = { records: allRecords, syncedAt: new Date().toISOString() };
     if (errors.length > 0) resultObj.errors = errors;
     res.json(resultObj);
