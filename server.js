@@ -6,6 +6,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health Endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // Scores API
 app.get('/api/scores', (req, res) => {
   try {
