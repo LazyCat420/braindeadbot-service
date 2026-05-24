@@ -6,6 +6,28 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Simple in-memory rate limiter
+const ipRequestCounts = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS = 60; // 60 requests per minute
+
+// Clear rate limits periodically
+setInterval(() => {
+  ipRequestCounts.clear();
+}, RATE_LIMIT_WINDOW);
+
+function rateLimiter(req, res, next) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+  const count = ipRequestCounts.get(ip) || 0;
+  if (count >= MAX_REQUESTS) {
+    return res.status(429).json({ error: "Too many requests. Please try again later." });
+  }
+  ipRequestCounts.set(ip, count + 1);
+  next();
+}
+
+app.use(rateLimiter);
+
 // Health Endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -35,8 +57,15 @@ app.post('/api/scores', (req, res) => {
     if (typeof name !== "string" || name.length === 0 || name.length > 12) {
       return res.status(400).json({ error: "Name must be 1-12 characters." });
     }
-    if (typeof score !== "number" || score < 0) {
-      return res.status(400).json({ error: "Score must be a non-negative number." });
+    if (typeof score !== "number" || score < 0 || isNaN(score) || !isFinite(score)) {
+      return res.status(400).json({ error: "Score must be a valid non-negative number." });
+    }
+    if (
+      typeof altitude !== "number" || isNaN(altitude) || !isFinite(altitude) ||
+      typeof meters !== "number" || isNaN(meters) || !isFinite(meters) ||
+      typeof tunnelDepth !== "number" || isNaN(tunnelDepth) || !isFinite(tunnelDepth)
+    ) {
+      return res.status(400).json({ error: "Altitude, meters, and tunnelDepth must be valid numbers." });
     }
     const db = getDb();
     const stmt = db.prepare(
@@ -67,9 +96,13 @@ function parseAtomFeed(xml, maxResults = 5) {
     const block = match[1];
     const videoIdMatch = block.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
     if (!videoIdMatch) continue;
+    const rawVideoId = videoIdMatch[1].trim();
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(rawVideoId)) {
+      continue;
+    }
     const titleMatch = block.match(/<title>([^<]+)<\/title>/);
     entries.push({
-      videoId: videoIdMatch[1].trim(),
+      videoId: rawVideoId,
       title: titleMatch ? titleMatch[1].trim() : "Untitled",
     });
   }
@@ -97,12 +130,27 @@ app.post('/api/youtube-sync', async (req, res) => {
     if (!Array.isArray(channels) || channels.length === 0) {
       return res.status(400).json({ error: "Request body must contain a non-empty 'channels' array." });
     }
+    if (channels.length > 10) {
+      return res.status(400).json({ error: "Cannot sync more than 10 channels at once." });
+    }
     const allRecords = [];
     const errors = [];
     for (const channel of channels) {
+      if (!channel || typeof channel !== "object") {
+        errors.push("Invalid channel entry.");
+        continue;
+      }
       let { channelId, artist, maxResults = 5 } = channel;
       maxResults = Math.min(Math.max(1, maxResults), 15);
-      if (channelId && channelId.startsWith("@")) {
+      if (typeof channelId !== "string" || !/^[a-zA-Z0-9_.\-@]+$/.test(channelId)) {
+        errors.push(`Invalid channel ID/handle format: ${channelId}`);
+        continue;
+      }
+      if (artist && (typeof artist !== "string" || artist.length > 100)) {
+        errors.push(`Invalid artist format/length: ${artist}`);
+        continue;
+      }
+      if (channelId.startsWith("@")) {
         const resolved = await resolveHandleToChannelId(channelId);
         if (!resolved) {
           errors.push(`Could not resolve handle ${channelId} to a channel ID.`);
