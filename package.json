@@ -4,12 +4,13 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "npx tsx server.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "tsx": "^4.22.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
