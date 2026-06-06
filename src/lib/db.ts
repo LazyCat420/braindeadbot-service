@@ -5,9 +5,9 @@ import { join } from "path";
 const DB_DIR = join(process.cwd(), "data");
 const DB_PATH = join(DB_DIR, "lazycat.db");
 
-let _db = null;
+let _db: Database.Database | null = null;
 
-export function getDb() {
+export function getDb(): Database.Database {
   if (_db) return _db;
 
   // Ensure data directory exists
@@ -18,6 +18,7 @@ export function getDb() {
   _db = new Database(DB_PATH);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
+  _db.pragma("busy_timeout = 5000");
 
   // Create tables if they don't exist
   _db.exec(`

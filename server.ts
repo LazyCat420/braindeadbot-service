@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { getDb } from './src/lib/db.js';
 
@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // Simple in-memory rate limiter
-const ipRequestCounts = new Map();
+const ipRequestCounts = new Map<string, number>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_REQUESTS = 60; // 60 requests per minute
 
@@ -16,8 +16,8 @@ setInterval(() => {
   ipRequestCounts.clear();
 }, RATE_LIMIT_WINDOW);
 
-function rateLimiter(req, res, next) {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+function rateLimiter(req: Request, res: Response, next: NextFunction) {
+  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || req.ip || "unknown";
   const count = ipRequestCounts.get(ip) || 0;
   if (count >= MAX_REQUESTS) {
     return res.status(429).json({ error: "Too many requests. Please try again later." });
@@ -29,12 +29,12 @@ function rateLimiter(req, res, next) {
 app.use(rateLimiter);
 
 // Health Endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok' });
 });
 
 // Scores API
-app.get('/api/scores', (req, res) => {
+app.get('/api/scores', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const scores = db
@@ -46,12 +46,22 @@ app.get('/api/scores', (req, res) => {
       )
       .all();
     res.json({ scores });
-  } catch (err) {
-    res.status(500).json({ error: `Failed to fetch scores: ${err.message}` });
+  } catch (error: unknown) {
+    console.error("Failed to fetch scores:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: `Failed to fetch scores: ${errorMessage}` });
   }
 });
 
-app.post('/api/scores', (req, res) => {
+interface ScoreBody {
+  name?: string;
+  score?: number;
+  altitude?: number;
+  meters?: number;
+  tunnelDepth?: number;
+}
+
+app.post('/api/scores', (req: Request<{}, {}, ScoreBody>, res: Response) => {
   try {
     const { name = "???", score = 0, altitude = 0, meters = 0, tunnelDepth = 0 } = req.body;
     if (typeof name !== "string" || name.length === 0 || name.length > 12) {
@@ -80,16 +90,23 @@ app.post('/api/scores', (req, res) => {
       Math.floor(tunnelDepth)
     );
     res.json({ id: result.lastInsertRowid, message: "Score saved!" });
-  } catch (err) {
-    res.status(500).json({ error: `Failed to save score: ${err.message}` });
+  } catch (error: unknown) {
+    console.error("Failed to save score:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: `Failed to save score: ${errorMessage}` });
   }
 });
 
 // YouTube Sync API
 const RSS_BASE = "https://www.youtube.com/feeds/videos.xml?channel_id=";
 
-function parseAtomFeed(xml, maxResults = 5) {
-  const entries = [];
+interface YouTubeEntry {
+  videoId: string;
+  title: string;
+}
+
+function parseAtomFeed(xml: string, maxResults: number = 5): YouTubeEntry[] {
+  const entries: YouTubeEntry[] = [];
   const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
   let match;
   while ((match = entryRegex.exec(xml)) !== null && entries.length < maxResults) {
@@ -109,12 +126,16 @@ function parseAtomFeed(xml, maxResults = 5) {
   return entries;
 }
 
-async function resolveHandleToChannelId(handle) {
+async function resolveHandleToChannelId(handle: string): Promise<string | null> {
   try {
     const cleanHandle = handle.startsWith("@") ? handle : `@${handle}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     const res = await fetch(`https://www.youtube.com/${cleanHandle}`, {
       headers: { "User-Agent": "Mozilla/5.0" },
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     if (!res.ok) return null;
     const html = await res.text();
     const idMatch = html.match(/UC[a-zA-Z0-9_-]{22}/);
@@ -124,7 +145,24 @@ async function resolveHandleToChannelId(handle) {
   }
 }
 
-app.post('/api/youtube-sync', async (req, res) => {
+interface ChannelRequest {
+  channelId?: unknown;
+  artist?: unknown;
+  maxResults?: unknown;
+}
+
+interface YouTubeSyncBody {
+  channels?: unknown;
+}
+
+interface RecordResult {
+  type: string;
+  id: string;
+  title: string;
+  artist: string;
+}
+
+app.post('/api/youtube-sync', async (req: Request<{}, {}, YouTubeSyncBody>, res: Response) => {
   try {
     const { channels } = req.body;
     if (!Array.isArray(channels) || channels.length === 0) {
@@ -133,21 +171,24 @@ app.post('/api/youtube-sync', async (req, res) => {
     if (channels.length > 10) {
       return res.status(400).json({ error: "Cannot sync more than 10 channels at once." });
     }
-    const allRecords = [];
-    const errors = [];
-    for (const channel of channels) {
+    const allRecords: RecordResult[] = [];
+    const errors: string[] = [];
+    for (const channel of channels as ChannelRequest[]) {
       if (!channel || typeof channel !== "object") {
         errors.push("Invalid channel entry.");
         continue;
       }
-      let { channelId, artist, maxResults = 5 } = channel;
+      let channelId = channel.channelId as string;
+      const artist = channel.artist as string;
+      let maxResults = typeof channel.maxResults === "number" ? channel.maxResults : 5;
+      
       maxResults = Math.min(Math.max(1, maxResults), 15);
       if (typeof channelId !== "string" || !/^[a-zA-Z0-9_.\-@]+$/.test(channelId)) {
-        errors.push(`Invalid channel ID/handle format: ${channelId}`);
+        errors.push(`Invalid channel ID/handle format: ${String(channelId)}`);
         continue;
       }
       if (artist && (typeof artist !== "string" || artist.length > 100)) {
-        errors.push(`Invalid artist format/length: ${artist}`);
+        errors.push(`Invalid artist format/length: ${String(artist)}`);
         continue;
       }
       if (channelId.startsWith("@")) {
@@ -164,7 +205,14 @@ app.post('/api/youtube-sync', async (req, res) => {
       }
       try {
         const feedUrl = `${RSS_BASE}${channelId}`;
-        const fetchRes = await fetch(feedUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const fetchRes = await fetch(feedUrl, { 
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         if (!fetchRes.ok) {
           errors.push(`RSS fetch failed for ${artist || channelId}: HTTP ${fetchRes.status}`);
           continue;
@@ -176,18 +224,28 @@ app.post('/api/youtube-sync', async (req, res) => {
             type: "youtube",
             id: entry.videoId,
             title: entry.title,
-            artist: artist || "Unknown",
+            artist: (artist as string) || "Unknown",
           });
         }
-      } catch (err) {
-        errors.push(`Error fetching RSS for ${artist || channelId}: ${err.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`Error fetching RSS for ${artist || channelId}: ${errorMessage}`);
       }
     }
-    const resultObj = { records: allRecords, syncedAt: new Date().toISOString() };
+    
+    interface ResultObj {
+      records: RecordResult[];
+      syncedAt: string;
+      errors?: string[];
+    }
+    
+    const resultObj: ResultObj = { records: allRecords, syncedAt: new Date().toISOString() };
     if (errors.length > 0) resultObj.errors = errors;
     res.json(resultObj);
-  } catch (err) {
-    res.status(500).json({ error: `Server error: ${err.message}` });
+  } catch (error: unknown) {
+    console.error("YouTube sync error:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: `Server error: ${errorMessage}` });
   }
 });
 
