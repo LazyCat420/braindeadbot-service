@@ -33,6 +33,12 @@ export function getDb(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_raccoon_scores_score
       ON raccoon_scores(score DESC);
+
+    CREATE TABLE IF NOT EXISTS youtube_handle_cache (
+      handle TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   return _db;
