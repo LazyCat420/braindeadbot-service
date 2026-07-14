@@ -11,6 +11,16 @@ export interface TransformedYouTubeEntry {
   title: string;
 }
 
+// Titles arrive XML-escaped in the Atom feed (e.g. "Rock &amp; Roll")
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'");
+}
+
 export function parseAtomFeed(feedXmlContent: string, maxResultsCount: number = 5): TransformedYouTubeEntry[] {
   const entries: TransformedYouTubeEntry[] = [];
   const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
@@ -29,7 +39,7 @@ export function parseAtomFeed(feedXmlContent: string, maxResultsCount: number = 
     const titleMatch = block.match(/<title>([^<]+)<\/title>/);
     entries.push({
       videoId: rawVideoId,
-      title: titleMatch ? titleMatch[1].trim() : "Untitled",
+      title: titleMatch ? decodeXmlEntities(titleMatch[1].trim()) : "Untitled",
     });
   }
   return entries;
@@ -79,7 +89,7 @@ export async function resolveHandleToChannelId(channelHandle: string): Promise<s
       return channelId;
     }
     return null;
-  } catch (error: unknown) {
+  } catch {
     return null;
   }
 }

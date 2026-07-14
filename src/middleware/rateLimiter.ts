@@ -4,9 +4,10 @@ const ipRequestCounts = new Map<string, number>();
 const RATE_LIMIT_WINDOW_MILLISECONDS = 60 * 1000;
 const MAXIMUM_REQUESTS_ALLOWED = 60;
 
+// unref() so the sweep timer never keeps the process alive on shutdown
 setInterval(() => {
   ipRequestCounts.clear();
-}, RATE_LIMIT_WINDOW_MILLISECONDS);
+}, RATE_LIMIT_WINDOW_MILLISECONDS).unref();
 
 export function rateLimiterMiddleware(request: Request, response: Response, nextFunction: NextFunction): void | Response {
   const clientIpAddress = ((request.headers["x-forwarded-for"] as string) || "")

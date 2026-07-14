@@ -48,7 +48,7 @@ router.post("/", (request: Request<{}, {}, ScoreBody>, response: Response): void
     );
     
     const result = statement.run(
-      name.slice(0, 12),
+      name,
       Math.floor(score),
       Math.floor(altitude),
       Math.floor(meters),

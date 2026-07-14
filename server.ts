@@ -21,6 +21,17 @@ app.use("/api/scores", scoresRouter);
 app.use("/api/youtube-sync", youtubeSyncRouter);
 
 const PORT = process.env.PORT || 5175;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
+
+// Graceful shutdown — Docker sends SIGTERM on container stop; without this
+// the process ignores it and gets SIGKILLed after the grace period.
+function shutdown(signal: string) {
+  console.log(`${signal} received — shutting down`);
+  server.close(() => process.exit(0));
+  // Force-exit if connections refuse to drain
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
