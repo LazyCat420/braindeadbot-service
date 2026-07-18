@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { rateLimiterMiddleware } from "./src/middleware/rateLimiter.js";
 import scoresRouter from "./src/routes/scores.js";
@@ -19,6 +19,22 @@ app.get("/health", (request: Request, response: Response) => {
 // Mounted Routes
 app.use("/api/scores", scoresRouter);
 app.use("/api/youtube-sync", youtubeSyncRouter);
+
+/**
+ * Error handler. Without one, a malformed JSON body surfaces express's default
+ * HTML stack-trace page — but every client path here expects `{ error: string }`
+ * and will fail to parse it. Must stay last, and must keep all four params or
+ * express registers it as ordinary middleware.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((error: Error, request: Request, response: Response, _next: NextFunction) => {
+  if (error instanceof SyntaxError && "body" in error) {
+    response.status(400).json({ error: "Malformed JSON body." });
+    return;
+  }
+  console.error("Unhandled error:", error);
+  response.status(500).json({ error: "Internal server error." });
+});
 
 const PORT = process.env.PORT || 5175;
 const server = app.listen(PORT, () => {

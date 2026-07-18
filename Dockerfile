@@ -2,7 +2,7 @@ FROM node:26-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ sqlite-dev
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 FROM node:26-alpine AS runner
 WORKDIR /app
@@ -16,6 +16,6 @@ COPY . .
 EXPOSE 5175
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:5175/api/scores || exit 1
+  CMD wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:5175/health || exit 1
 
 CMD ["npm", "run", "start"]

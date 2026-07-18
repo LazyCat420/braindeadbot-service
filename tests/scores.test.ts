@@ -98,3 +98,64 @@ test("GET returns top 10 sorted by score descending", async () => {
     assert.ok(scores[i].score >= scores[i + 1].score, "scores must be sorted descending");
   }
 });
+
+test("POST rejects an absurd score", async () => {
+  // No auth guards this endpoint — without a ceiling one crafted POST owns the
+  // board forever.
+  assert.equal((await postScore({ name: "Cheat", score: Number.MAX_SAFE_INTEGER })).status, 400);
+});
+
+test("POST rejects an unknown game id", async () => {
+  assert.equal((await postScore({ game: "not-a-game", name: "Nope", score: 1 })).status, 400);
+});
+
+test("boards are per-game: a pinball score never lands on the raccoon board", async () => {
+  const posted = await postScore({ game: "pinball-knight", name: "KNIGHT", score: 999_999 });
+  assert.equal(posted.status, 200);
+
+  // Highest score in the database by a wide margin — but a different game.
+  const raccoon = await (await fetch(`${baseUrl}/api/scores?game=raccoon-tornado`)).json();
+  assert.ok(
+    !raccoon.scores.some((s: { name: string }) => s.name === "KNIGHT"),
+    "pinball score leaked onto the raccoon board"
+  );
+
+  const pinball = await (await fetch(`${baseUrl}/api/scores?game=pinball-knight`)).json();
+  assert.equal(pinball.game, "pinball-knight");
+  assert.ok(pinball.scores.some((s: { name: string }) => s.name === "KNIGHT"));
+});
+
+test("GET defaults to raccoon-tornado so the pre-`game` client keeps working", async () => {
+  const { game, scores } = await (await fetch(`${baseUrl}/api/scores`)).json();
+  assert.equal(game, "raccoon-tornado");
+  assert.ok(!scores.some((s: { name: string }) => s.name === "KNIGHT"));
+});
+
+test("GET rejects an unknown game id", async () => {
+  assert.equal((await fetch(`${baseUrl}/api/scores?game=not-a-game`)).status, 400);
+});
+
+test("per-game extras round-trip through `detail`", async () => {
+  const posted = await postScore({
+    game: "pinball-knight",
+    name: "DETAIL",
+    score: 4200,
+    detail: { floor: 7, combo: 31 },
+  });
+  assert.equal(posted.status, 200);
+
+  const { scores } = await (await fetch(`${baseUrl}/api/scores?game=pinball-knight`)).json();
+  const saved = scores.find((s: { name: string }) => s.name === "DETAIL");
+  assert.ok(saved, "expected the DETAIL score to be on the board");
+  assert.deepEqual(JSON.parse(saved.detail), { floor: 7, combo: 31 });
+});
+
+test("POST rejects an oversized detail blob", async () => {
+  const response = await postScore({
+    game: "pinball-knight",
+    name: "Big",
+    score: 1,
+    detail: { blob: "x".repeat(3000) },
+  });
+  assert.equal(response.status, 400);
+});

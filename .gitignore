@@ -1,1 +1,20 @@
 node_modules/
+
+# The SQLite database (and its WAL sidecars) — db.ts writes these into the
+# repo root at runtime, so without this a `git add -A` commits production data.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Build output (tsconfig declares outDir, even though `tsx` runs the TS directly)
+dist/
+
+# Logs
+*.log
+npm-debug.log*
