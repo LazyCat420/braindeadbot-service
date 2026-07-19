@@ -10,3 +10,15 @@ services:
     environment:
       - PORT=5175
       - NODE_ENV=production
+    volumes:
+      - /usr/share/zoneinfo/America/Los_Angeles:/etc/localtime:ro
+      # THE LEADERBOARD LIVES HERE.
+      #
+      # src/lib/db.ts writes SQLite to `process.cwd()/data`, i.e. /app/data. This
+      # mount was missing, so the database sat in the container's writable layer
+      # — and deploy does `compose down` then `up -d`, which destroys it. Every
+      # deploy silently wiped every score.
+      #
+      # It went unnoticed because the board was empty. Pinball Knight is about to
+      # start writing real scores, so it would not have stayed unnoticed.
+      - ./data:/app/data
