@@ -3,7 +3,12 @@
  * string so a typo'd id becomes a 400 instead of silently creating an orphan
  * board nobody can read back.
  */
-export const GAME_IDS = ["raccoon-tornado", "pinball-knight"] as const;
+export const GAME_IDS = [
+  "raccoon-tornado",
+  "pinball-knight",
+  "ski-game",
+  "pirate-surf",
+] as const;
 
 export type GameId = (typeof GAME_IDS)[number];
 

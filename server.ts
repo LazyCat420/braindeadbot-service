@@ -5,7 +5,62 @@ import scoresRouter from "./src/routes/scores.js";
 import youtubeSyncRouter from "./src/routes/youtubeSync.js";
 
 const app = express();
-app.use(cors());
+
+/**
+ * Trust proxy — off by default.
+ *
+ * This governs whether express believes `x-forwarded-for`, and the rate limiter
+ * keys on `request.ip`, which express derives from it. The service sits behind
+ * no reverse proxy today, so trusting the header would let any caller rotate a
+ * spoofed value and reset their own bucket at will. Set TRUST_PROXY (to `1`,
+ * `loopback`, a subnet, …) only when a real proxy is actually in front.
+ */
+if (process.env.TRUST_PROXY) {
+  const trustProxySetting = process.env.TRUST_PROXY;
+  app.set("trust proxy", /^\d+$/.test(trustProxySetting) ? Number(trustProxySetting) : trustProxySetting);
+} else {
+  app.set("trust proxy", false);
+}
+
+/**
+ * CORS — origin allowlist rather than bare `cors()`.
+ *
+ * `cors()` with no options reflects any Origin and sets
+ * `Access-Control-Allow-Origin: *`, so any page on the internet could script a
+ * visitor's browser into writing scores. The list is the client's real origins;
+ * ALLOWED_ORIGINS (comma-separated) extends it without a code change.
+ *
+ * Requests with no Origin header (curl, health checks, same-origin server calls)
+ * are allowed — CORS is a browser mechanism and blocking them buys nothing.
+ */
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://room.braindeadbot.com",
+  "http://room.braindeadbot.com",
+  "http://10.0.0.16:5174",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+];
+
+const allowedOrigins = new Set([
+  ...DEFAULT_ALLOWED_ORIGINS,
+  ...(process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+]);
+
+app.use(
+  cors({
+    origin(requestOrigin, callback) {
+      if (!requestOrigin || allowedOrigins.has(requestOrigin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin not allowed: ${requestOrigin}`));
+    },
+  })
+);
+
 app.use(express.json());
 
 // Global rate limiting
@@ -30,6 +85,13 @@ app.use("/api/youtube-sync", youtubeSyncRouter);
 app.use((error: Error, request: Request, response: Response, _next: NextFunction) => {
   if (error instanceof SyntaxError && "body" in error) {
     response.status(400).json({ error: "Malformed JSON body." });
+    return;
+  }
+  // Disallowed CORS origin. Rejected outright rather than merely omitting the
+  // response headers — a "simple" cross-origin POST still reaches the handler
+  // and writes, even though the browser hides the reply from the attacker.
+  if (error && typeof error.message === "string" && error.message.startsWith("Origin not allowed")) {
+    response.status(403).json({ error: "Origin not allowed." });
     return;
   }
   console.error("Unhandled error:", error);

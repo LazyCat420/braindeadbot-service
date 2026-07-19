@@ -6,7 +6,18 @@ services:
     container_name: braindeadbot-service
     restart: unless-stopped
     ports:
-      - "5175:5175"
+      # Bound to the LAN address only, not 0.0.0.0.
+      #
+      # `"5175:5175"` publishes on every interface the host has. This service has
+      # no auth, so that exposed the leaderboard write API to anything that could
+      # reach any of the host's addresses — tunnels and VPN interfaces included.
+      #
+      # The LAN IP is the narrowest binding that still works: the leaderboard is
+      # read and written by the *browser* (see client src/services/api-config.ts),
+      # not server-side by the client container, so LAN browsers must reach it
+      # directly. 127.0.0.1 would break every visitor. Containers on the host can
+      # still reach the host's LAN IP, so the client container is unaffected.
+      - "${SERVICE_BIND_IP:-10.0.0.16}:5175:5175"
     environment:
       - PORT=5175
       - NODE_ENV=production
