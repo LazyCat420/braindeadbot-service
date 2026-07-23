@@ -24,11 +24,15 @@ interface Member {
 
 export class Session {
   readonly id: string;
+  /** Shared floor seed — every member generates identical mazes from it. Sent in
+   * party:start/solo:start so all clients agree BEFORE the first floor builds. */
+  readonly seed: number;
   private readonly members = new Map<string, Member>();
   private hostId: string;
 
-  private constructor(id: string, members: Member[]) {
+  private constructor(id: string, seed: number, members: Member[]) {
     this.id = id;
+    this.seed = seed;
     this.members = new Map(members.map((m) => [m.peer.id, m]));
     // Role 0 is the host by construction; fall back to the lowest role present.
     this.hostId = members.reduce((a, b) => (b.role < a.role ? b : a)).peer.id;
@@ -36,8 +40,9 @@ export class Session {
 
   static create(peers: Peer[]): Session {
     const id = randomUUID();
+    const seed = (Math.random() * 0x7fffffff) | 0;
     const members = peers.map((peer, role) => ({ peer, role }));
-    const s = new Session(id, members);
+    const s = new Session(id, seed, members);
     for (const m of members) m.peer.sessionId = id;
     return s;
   }
@@ -65,7 +70,7 @@ export class Session {
     const m = this.members.get(peer.id);
     if (!m) return; // not part of this session — ignore
     m.peer = peer; // adopt the (possibly reconnected) socket
-    peer.send({ type: "session:state", members: this.roster(), hostId: this.hostId, role: m.role });
+    peer.send({ type: "session:state", members: this.roster(), hostId: this.hostId, role: m.role, seed: this.seed });
   }
 
   /** Host → replicas. Dropped (and logged) if a non-host tries to author. */

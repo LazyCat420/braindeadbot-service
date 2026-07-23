@@ -94,12 +94,12 @@ export type ServerMessage =
   | { type: "party:forming"; members: string[]; seconds: number }
   | { type: "party:tick"; seconds: number }
   | { type: "party:cancelled"; reason: "bailed" | "disconnected" }
-  | { type: "party:start"; sessionId: string; members: PartyMember[]; role: number; hostId: string }
+  | { type: "party:start"; sessionId: string; members: PartyMember[]; role: number; hostId: string; seed: number }
   // Solo fallback
   | { type: "solo:countdown"; seconds: number }
-  | { type: "solo:start"; sessionId: string }
+  | { type: "solo:start"; sessionId: string; seed: number }
   // Dungeon session
-  | { type: "session:state"; members: PartyMember[]; hostId: string; role: number }
+  | { type: "session:state"; members: PartyMember[]; hostId: string; role: number; seed: number }
   | { type: "session:snapshot"; snap: unknown } // relayed host snapshot → replicas
   | { type: "session:input"; fromId: string; input: unknown } // relayed replica input → host
   | { type: "session:event"; fromId: string; event: unknown }

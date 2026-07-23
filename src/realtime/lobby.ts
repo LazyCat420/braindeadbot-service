@@ -214,7 +214,7 @@ export class Lobby {
       this.cancelSolo();
       const solo = q[0];
       const session = this.sessions.create([solo]);
-      solo.send({ type: "solo:start", sessionId: session.id });
+      solo.send({ type: "solo:start", sessionId: session.id, seed: session.seed });
       this.depart([solo]);
     }, 1000);
   }
@@ -232,7 +232,7 @@ export class Lobby {
     const members = session.roster();
     const hostId = session.hostPeerId;
     for (const p of party) {
-      p.send({ type: "party:start", sessionId: session.id, members, role: session.roleOf(p.id), hostId });
+      p.send({ type: "party:start", sessionId: session.id, members, role: session.roleOf(p.id), hostId, seed: session.seed });
     }
     this.depart(party);
   }
