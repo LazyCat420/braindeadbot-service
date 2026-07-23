@@ -18,8 +18,9 @@ import {
   KNIGHT_COLORS,
   PARTY_MAX,
   PARTY_MIN,
+  POOL_MAX,
   SOLO_TIMEOUT_S,
-  TAVERN_MAX,
+  type Facing,
   type RemoteKnight,
 } from "./protocol.js";
 import type { Peer } from "./peer.js";
@@ -35,9 +36,13 @@ const DEFAULT_CLOCK: Clock = {
 };
 
 export class Lobby {
-  private readonly room = new Map<string, Peer>(); // present in the tavern (≤ 8)
+  private readonly room = new Map<string, Peer>(); // everyone in the pool (≤ POOL_MAX)
   private readonly overflow: Peer[] = []; // waiting for a slot, FIFO
   private readonly usedSlots = new Set<number>();
+  // The shared world seed — every player generates the same dungeon from it, so
+  // the pool is literally one game. Regenerated when the pool empties so a fresh
+  // crowd gets a fresh world.
+  private poolSeed = (Math.random() * 0x7fffffff) | 0;
 
   // Countdown state — at most one runs at a time.
   private countdownTimer: NodeJS.Timeout | null = null;
@@ -58,25 +63,25 @@ export class Lobby {
 
   // ── Join / leave ────────────────────────────────────────────────────────────
   join(peer: Peer, preferredSlot?: number): void {
-    if (this.room.size >= TAVERN_MAX) {
+    if (this.room.size >= POOL_MAX) {
       peer.overflow = true;
       peer.slot = -1;
       this.overflow.push(peer);
       peer.send({ type: "room:full" });
-      peer.send({ type: "welcome", id: peer.id, slot: -1, name: peer.name, colors: KNIGHT_COLORS });
+      peer.send({ type: "welcome", id: peer.id, slot: -1, name: peer.name, colors: KNIGHT_COLORS, seed: this.poolSeed });
       return;
     }
     this.admit(peer, preferredSlot);
   }
 
-  /** Bring a peer into the room proper: assign a color, announce, snapshot. */
+  /** Bring a peer into the pool: assign a color, hand it the world seed, snapshot. */
   private admit(peer: Peer, preferredSlot?: number): void {
     peer.overflow = false;
     peer.slot = this.claimSlot(preferredSlot);
     peer.ready = false;
     this.room.set(peer.id, peer);
 
-    peer.send({ type: "welcome", id: peer.id, slot: peer.slot, name: peer.name, colors: KNIGHT_COLORS });
+    peer.send({ type: "welcome", id: peer.id, slot: peer.slot, name: peer.name, colors: KNIGHT_COLORS, seed: this.poolSeed });
     peer.send({ type: "room:state", players: this.snapshotExcept(peer.id) });
     this.broadcast({ type: "player:join", player: this.view(peer) }, peer.id);
   }
@@ -94,16 +99,19 @@ export class Lobby {
         this.onReadyChanged("disconnected");
       }
       this.admitFromOverflow();
+      // Empty pool → fresh world for whoever shows up next.
+      if (this.room.size === 0 && this.overflow.length === 0) this.poolSeed = (Math.random() * 0x7fffffff) | 0;
     }
   }
 
   // ── Movement fan-out ─────────────────────────────────────────────────────────
-  move(peer: Peer, x: number, z: number, facing: RemoteKnight["facing"]): void {
+  move(peer: Peer, x: number, z: number, facing: Facing, scene: string): void {
     if (!this.room.has(peer.id)) return;
     peer.x = x;
     peer.z = z;
     peer.facing = facing;
-    this.broadcast({ type: "player:move", id: peer.id, x, z, facing }, peer.id);
+    peer.scene = scene;
+    this.broadcast({ type: "player:move", id: peer.id, x, z, facing, scene }, peer.id);
   }
 
   // ── Ready gate ───────────────────────────────────────────────────────────────
@@ -250,12 +258,14 @@ export class Lobby {
   }
 
   private admitFromOverflow(): void {
-    if (this.room.size >= TAVERN_MAX) return;
+    if (this.room.size >= POOL_MAX) return;
     const next = this.overflow.shift();
     if (next) this.admit(next);
   }
 
   // ── Color slots ──────────────────────────────────────────────────────────────
+  // Prefer a distinct color; once all 8 are taken (pool > 8) colors REPEAT —
+  // slot is still a valid palette index, it's just no longer unique.
   private claimSlot(preferred?: number): number {
     if (preferred !== undefined && preferred >= 0 && preferred < KNIGHT_COLORS.length && !this.usedSlots.has(preferred)) {
       this.usedSlots.add(preferred);
@@ -267,15 +277,18 @@ export class Lobby {
         return s;
       }
     }
-    return 0; // room is capped at 8 == color count, so this is unreachable
+    return this.room.size % KNIGHT_COLORS.length; // all colors in use — wrap
   }
   private releaseSlot(slot: number): void {
-    if (slot >= 0) this.usedSlots.delete(slot);
+    // Only release a color if no other peer still holds it (colors can repeat).
+    if (slot < 0) return;
+    for (const p of this.room.values()) if (p.slot === slot) return;
+    this.usedSlots.delete(slot);
   }
 
   // ── Snapshot helpers ─────────────────────────────────────────────────────────
   private view(p: Peer): RemoteKnight {
-    return { id: p.id, slot: p.slot, name: p.name, x: p.x, z: p.z, facing: p.facing, ready: p.ready };
+    return { id: p.id, slot: p.slot, name: p.name, x: p.x, z: p.z, facing: p.facing, ready: p.ready, scene: p.scene };
   }
   private snapshotExcept(id: string): RemoteKnight[] {
     return [...this.room.values()].filter((p) => p.id !== id).map((p) => this.view(p));

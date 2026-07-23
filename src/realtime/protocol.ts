@@ -16,10 +16,15 @@
  * are the truth, and the server refuses `session:snapshot` from anyone else.
  */
 
-// ── Room / party sizing ──────────────────────────────────────────────────────
-export const TAVERN_MAX = 8; // how many knights may stand in one tavern at once
-export const PARTY_MAX = 4; // max members in a single dungeon session
-export const PARTY_MIN = 2; // min ready knights to start a party countdown
+// ── Pool sizing ──────────────────────────────────────────────────────────────
+// The game is one shared DROP-IN POOL: everyone who connects joins the same
+// world (no lobby/create/ready). POOL_MAX caps concurrent players; colors repeat
+// past the 8-color palette.
+export const POOL_MAX = 24;
+// Legacy lobby/party constants — kept for the (now-dormant) session code paths.
+export const TAVERN_MAX = 8;
+export const PARTY_MAX = 4;
+export const PARTY_MIN = 2;
 
 /** Countdown seconds by how many are ready at the gate — more ready = faster. */
 export const COUNTDOWN_BY_READY: Record<number, number> = { 2: 10, 3: 7, 4: 5 };
@@ -45,15 +50,18 @@ export const KNIGHT_COLORS: readonly KnightColor[] = [
 
 export type Facing = "N" | "S" | "E" | "W";
 
-/** The public view of a knight, broadcast to everyone in the room. */
+/** The public view of a knight, broadcast to everyone in the pool. */
 export interface RemoteKnight {
   id: string;
-  slot: number; // color slot 0..7
+  slot: number; // color slot 0..7 (repeats past 8)
   name: string;
   x: number;
   z: number;
   facing: Facing;
   ready: boolean;
+  /** Which scene the knight is in: "tavern" or "dungeon:<floor>". Renderers only
+   * show peers whose scene matches theirs. */
+  scene: string;
 }
 
 /** A party member's identity as handed to the dungeon at party:start. */
@@ -66,9 +74,9 @@ export interface PartyMember {
 
 // ── Client → Server ──────────────────────────────────────────────────────────
 export type ClientMessage =
-  // Tavern
+  // Pool presence
   | { type: "hello"; name: string; preferredSlot?: number }
-  | { type: "move"; x: number; z: number; facing: Facing }
+  | { type: "move"; x: number; z: number; facing: Facing; scene: string }
   | { type: "ready"; ready: boolean }
   // Dungeon session
   | { type: "session:hello"; sessionId: string }
@@ -81,14 +89,14 @@ export type ClientMessage =
 
 // ── Server → Client ──────────────────────────────────────────────────────────
 export type ServerMessage =
-  // Identity + room lifecycle
-  | { type: "welcome"; id: string; slot: number; name: string; colors: readonly KnightColor[] }
+  // Identity + pool lifecycle
+  | { type: "welcome"; id: string; slot: number; name: string; colors: readonly KnightColor[]; seed: number }
   | { type: "room:state"; players: RemoteKnight[] }
   | { type: "player:join"; player: RemoteKnight }
   | { type: "player:leave"; id: string }
-  | { type: "room:full" } // 8 slots taken; caller is held in overflow
-  // Movement (fanned out from `move`)
-  | { type: "player:move"; id: string; x: number; z: number; facing: Facing }
+  | { type: "room:full" } // pool at POOL_MAX; caller is held until a slot frees
+  // Movement (fanned out from `move`) — carries the sender's current scene
+  | { type: "player:move"; id: string; x: number; z: number; facing: Facing; scene: string }
   // Ready gate
   | { type: "player:ready"; id: string; ready: boolean }
   | { type: "party:forming"; members: string[]; seconds: number }

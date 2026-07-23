@@ -18,6 +18,7 @@ export interface Peer {
   x: number;
   z: number;
   facing: Facing;
+  scene: string; // "tavern" | "dungeon:<floor>" — which world the peer is in
   ready: boolean;
   readyAt: number; // ms timestamp the peer last readied — orders the queue
 

@@ -85,6 +85,7 @@ export function attachRealtime(server: Server, opts: HubOptions): WebSocketServe
       x: 0,
       z: 0,
       facing: "S",
+      scene: "tavern",
       ready: false,
       readyAt: 0,
       sessionId: null,
@@ -120,7 +121,7 @@ export function attachRealtime(server: Server, opts: HubOptions): WebSocketServe
           break;
         }
         case "move":
-          if (isFinite(msg.x) && isFinite(msg.z)) lobby.move(peer, msg.x, msg.z, msg.facing as Facing);
+          if (isFinite(msg.x) && isFinite(msg.z)) lobby.move(peer, msg.x, msg.z, msg.facing as Facing, typeof msg.scene === "string" ? msg.scene : "tavern");
           break;
         case "ready":
           lobby.setReady(peer, !!msg.ready);
