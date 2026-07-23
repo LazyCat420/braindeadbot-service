@@ -35,6 +35,9 @@ if (process.env.TRUST_PROXY) {
  * are allowed — CORS is a browser mechanism and blocking them buys nothing.
  */
 const DEFAULT_ALLOWED_ORIGINS = [
+  "https://braindeadbot.com",
+  "http://braindeadbot.com",
+  "https://www.braindeadbot.com",
   "https://room.braindeadbot.com",
   "http://room.braindeadbot.com",
   "http://10.0.0.16:5174",
