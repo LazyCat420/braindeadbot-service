@@ -3,6 +3,7 @@ import cors from "cors";
 import { rateLimiterMiddleware } from "./src/middleware/rateLimiter.js";
 import scoresRouter from "./src/routes/scores.js";
 import youtubeSyncRouter from "./src/routes/youtubeSync.js";
+import { attachRealtime } from "./src/realtime/hub.js";
 
 const app = express();
 
@@ -102,6 +103,11 @@ const PORT = process.env.PORT || 5175;
 const server = app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
+
+// 🕸️ Pinball-Knight multiplayer: attach the raw-ws hub to the same HTTP server
+// (path /ws), reusing the REST origin allowlist. Sharing the port keeps
+// docker-compose and the deploy untouched.
+attachRealtime(server, { allowedOrigins });
 
 // Graceful shutdown — Docker sends SIGTERM on container stop; without this
 // the process ignores it and gets SIGKILLed after the grace period.
