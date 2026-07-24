@@ -44,6 +44,9 @@ export function attachRealtime(server: Server, opts: HubOptions): WebSocketServe
   const wss = new WebSocketServer({
     server,
     path: opts.path ?? "/ws",
+    // ws defaults to a 100 MB frame cap — one oversized message would be fanned
+    // out to every peer. Nothing legitimate here comes close to 64 KB.
+    maxPayload: 64 * 1024,
     // Reject disallowed browser origins before the handshake completes. No
     // origin (curl, native clients, health checks) is allowed, exactly as the
     // REST CORS treats it.

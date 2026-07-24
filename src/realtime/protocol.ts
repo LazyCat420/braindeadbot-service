@@ -1,19 +1,13 @@
 /**
- * 🕸️ Realtime protocol — the wire contract for Pinball-Knight multiplayer.
+ * 🕸️ Realtime protocol — a DORMANT copy of the Pinball-Knight wire contract.
  *
- * This is the CANONICAL definition. The client mirrors it in
- * `braindeadbot-client/src/net/protocol.ts` (same convention the score/youtube
- * services already use — see that file's header). Keep the two in lockstep:
- * every message here has a twin there, and a change to a payload shape is a
- * change to both files or the two ends silently disagree.
- *
- * Two channels ride one socket, distinguished by the `type` discriminator:
- *   • TAVERN  — presence + matchmaking (the lobby owns this)
- *   • SESSION — a formed party's dungeon run (host-authoritative relay)
- *
- * The server is a MATCHMAKER + RELAY, not the physics authority. Inside a
- * dungeon session exactly one member is the host (role 0); its world snapshots
- * are the truth, and the server refuses `session:snapshot` from anyone else.
+ * ⚠️ This hub receives no production traffic: the live pool hub runs IN-PROCESS
+ * in the client's own server (`braindeadbot-client/server/realtime.mjs`), which
+ * is now the canonical protocol definition together with its browser mirror
+ * `braindeadbot-client/src/net/protocol.ts`. The edge routes /ws only to the
+ * client. This copy predates the drop-in-pool model and has drifted (no
+ * `world`/`act` channel, still has `ready` + the party/session matchmaker);
+ * revive it only by re-syncing it against the client files first.
  */
 
 // ── Pool sizing ──────────────────────────────────────────────────────────────
