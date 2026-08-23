@@ -40,9 +40,14 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://www.braindeadbot.com",
   "https://room.braindeadbot.com",
   "http://room.braindeadbot.com",
+  "https://pinballknight.braindeadbot.com",
+  "http://pinballknight.braindeadbot.com",
   "http://10.0.0.16:5174",
+  "http://10.0.0.16:8789",
   "http://localhost:5174",
+  "http://localhost:8789",
   "http://127.0.0.1:5174",
+  "http://127.0.0.1:8789",
 ];
 
 const allowedOrigins = new Set([
