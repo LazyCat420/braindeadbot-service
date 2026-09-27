@@ -1,9 +1,33 @@
 import { Router, Request, Response } from "express";
+import type Database from "better-sqlite3";
 import { getDb } from "../lib/db.js";
 import { getErrorMessage } from "../utils/error-handler.js";
 import { ScoreBody, GAME_IDS, DEFAULT_GAME, isGameId } from "../types/index.js";
 
 const router = Router();
+
+let _cachedDb: Database.Database | null = null;
+let _getScoresStmt: Database.Statement | null = null;
+let _insertScoreStmt: Database.Statement | null = null;
+
+function getStatements(db: Database.Database) {
+  if (_cachedDb !== db) {
+    _cachedDb = db;
+    _getScoresStmt = db.prepare(
+      `SELECT id, game, name, score, altitude, meters, tunnel_depth AS tunnelDepth,
+              detail, created_at AS createdAt
+       FROM game_scores
+       WHERE game = ?
+       ORDER BY score DESC
+       LIMIT 10`
+    );
+    _insertScoreStmt = db.prepare(
+      `INSERT INTO game_scores (game, name, score, altitude, meters, tunnel_depth, detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+  }
+  return { getScoresStmt: _getScoresStmt!, insertScoreStmt: _insertScoreStmt! };
+}
 
 /**
  * Sanity ceiling on a submitted score. There is no auth on this endpoint, so
@@ -25,16 +49,8 @@ router.get("/", (request: Request, response: Response): void | Response => {
     }
 
     const database = getDb();
-    const scores = database
-      .prepare(
-        `SELECT id, game, name, score, altitude, meters, tunnel_depth AS tunnelDepth,
-                detail, created_at AS createdAt
-         FROM game_scores
-         WHERE game = ?
-         ORDER BY score DESC
-         LIMIT 10`
-      )
-      .all(game);
+    const { getScoresStmt } = getStatements(database);
+    const scores = getScoresStmt.all(game);
     response.json({ game, scores });
   } catch (error: unknown) {
     console.error("Failed to fetch scores:", error);
@@ -81,12 +97,9 @@ router.post("/", (request: Request<object, object, ScoreBody>, response: Respons
     }
 
     const database = getDb();
-    const statement = database.prepare(
-      `INSERT INTO game_scores (game, name, score, altitude, meters, tunnel_depth, detail)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
+    const { insertScoreStmt } = getStatements(database);
 
-    const result = statement.run(
+    const result = insertScoreStmt.run(
       game,
       name,
       Math.floor(score),
