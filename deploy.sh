@@ -2,7 +2,7 @@
 # ============================================================
 # Braindead Bot Service — Build & Deploy to Synology NAS
 #
-# Thin wrapper — all logic lives in ../deploy-kit/lib.sh
+# Thin wrapper — all logic lives in ../../../deploy-kit/lib.sh
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,4 +17,4 @@ PRE_BUILD() {
   fi
 }
 
-source "${SCRIPT_DIR}/../deploy-kit/lib.sh"
+source "${SCRIPT_DIR}/../../../deploy-kit/lib.sh"
